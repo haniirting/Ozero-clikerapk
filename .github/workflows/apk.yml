@@ -16,8 +16,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - run: mkdir -p www && cp index.html www/
+      - run: mkdir -p www && cp "$(find . -name index.html -not -path "./node_modules/*" -not -path "./www/*" | head -1)" www/index.html
       - run: npm install
+      - run: echo '{"appId":"com.ozero.taptap","appName":"Озеро","webDir":"www"}' > capacitor.config.json
       - run: npx cap add android
       - run: npx cap sync android
       - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
