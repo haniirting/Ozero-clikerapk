@@ -1,3 +1,4 @@
+
 name: Prepare Android project for F-Droid
 
 on:
@@ -9,6 +10,7 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -17,7 +19,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -29,6 +30,7 @@ jobs:
         run: |
           mkdir -p www
           cp index.html www/index.html
+
           cat > capacitor.config.json <<'EOF'
           {
             "appId": "com.ozero.taptap",
@@ -37,30 +39,32 @@ jobs:
           }
           EOF
 
-      - name: Install pinned project dependencies
+      - name: Install dependencies and create lock file
         run: npm install
 
-      - name: Generate and sync native Android project
+      - name: Generate and sync Android project
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
           npx cap sync android
 
-      - name: Verify Android project builds
+      - name: Build Android APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Commit generated Android project
+      - name: Commit Android project
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add android package-lock.json capacitor.config.json www/index.html
+
           if git diff --cached --quiet; then
-            echo "No generated Android changes to commit."
+            echo "No changes to commit"
           else
-            git commit -m "Prepare native Android project for F-Droid"
+            git commit -m "Prepare Android project for F-Droid"
             git push
           fi
