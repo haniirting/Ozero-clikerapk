@@ -15,35 +15,52 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check ZIP
+      - name: Check archive
         run: |
-          ZIP="Ozero-clikerapk-main.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "Архив не найден!"
-            ls -la
+          if [ ! -f "Ozero-clikerapk-main.zip" ]; then
+            echo "Archive not found!"
             exit 1
           fi
 
       - name: Extract project
         run: |
-          mkdir -p extracted
-          unzip -o Ozero-clikerapk-main.zip -d extracted
+          mkdir -p "$RUNNER_TEMP/ozero"
+          unzip -q Ozero-clikerapk-main.zip -d "$RUNNER_TEMP/ozero"
 
-      - name: Copy project files
+          SOURCE_DIR=$(find "$RUNNER_TEMP/ozero" \
+            -mindepth 1 -maxdepth 1 -type d | head -n 1)
+
+          if [ -z "$SOURCE_DIR" ]; then
+            echo "Project folder not found!"
+            exit 1
+          fi
+
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+
+      - name: Install project files
         run: |
-          cp -a extracted/Ozero-clikerapk-main/. .
+          rsync -a \
+            --exclude='.github/' \
+            "$SOURCE_DIR/" ./
 
-      - name: Commit extracted files
+      - name: Commit project
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A
+          git add -A -- \
+            android \
+            index.html \
+            www \
+            package.json \
+            package-lock.json \
+            capacitor.config.json \
+            capacitor_config.json \
+            LICENSE
 
-          if ! git diff --cached --quiet; then
-            git commit -m "Extract Ozero project archive"
-            git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
           else
-            echo "Изменений нет"
+            git commit -m "Extract Ozero Android project"
+            git push origin HEAD:main
           fi
