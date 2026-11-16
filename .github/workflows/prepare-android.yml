@@ -1,0 +1,73 @@
+
+name: Prepare Android project for F-Droid
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Prepare web assets
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.ozero.taptap",
+            "appName": "Озеро",
+            "webDir": "www"
+          }
+          EOF
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Sync Android
+        run: npx cap sync android
+
+      - name: Verify web assets
+        run: |
+          test -f android/app/src/main/assets/public/index.html
+          echo "Web assets found!"
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Commit project
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add android package-lock.json capacitor.config.json www/index.html
+          git add -f android/app/src/main/assets/public
+          git add -f android/app/src/main/assets/capacitor.config.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Include web assets for F-Droid build"
+            git push
+          fi
