@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Озеро — блинчики</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#0b1d2a;touch-action:manipulation;user-select:none;-webkit-user-select:none;font-family:system-ui,sans-serif}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;top:0;left:0;right:0;text-align:center;color:#fff;padding-top:max(16px,env(safe-area-inset-top));pointer-events:none;text-shadow:0 2px 8px #0008}
+#n{font-size:44px;font-weight:700}
+#l{font-size:14px;opacity:.85}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><div id="n">0</div><div id="l">камней брошено всеми</div></div>
+<script>
+// Общий счёт: Firebase Realtime Database (REST). Узел /lake/count
+const DB = 'https://taptap-ozero-default-rtdb.firebaseio.com/lake/count.json';
+
+const cv = document.getElementById('c'), g = cv.getContext('2d'), nEl = document.getElementById('n'), lEl = document.getElementById('l');
+let W, H, HZ;
+function rs() {
+  const d = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  cv.width = W * d; cv.height = H * d;
+  g.setTransform(d, 0, 0, d, 0, 0);
+  HZ = H * 0.28;
+}
+addEventListener('resize', rs); rs();
+
+let server = 0, pending = 0;
+const stones = [], rips = [];
+
+function throwStone(x, y) {
+  y = Math.max(y, HZ + (H - HZ) * 0.25);
+  stones.push({ x, y, h: 0, vh: 520, vx: (Math.random() - .5) * 80, sp: 0.62, hop: 0 });
+  rips.push({ x, y, t: 0, s: scale(y), a: .6 });
+}
+function scale(y) { return 0.2 + 0.8 * Math.max(0, (y - HZ) / (H - HZ)); }
+
+function step(dt) {
+  for (let i = stones.length - 1; i >= 0; i--) {
+    const s = stones[i], sc = scale(s.y);
+    s.x += s.vx * sc * dt;
+    s.y -= s.sp * (H - HZ) * sc * dt;
+    s.vh -= 1500 * dt;
+    s.h += s.vh * dt;
+    if (s.h <= 0) {
+      s.h = 0;
+      rips.push({ x: s.x, y: s.y, t: 0, s: scale(s.y), a: .7 });
+      s.hop++;
+      s.vh = Math.abs(s.vh) * 0.7;
+      s.sp *= 0.84;
+      if (s.vh < 130 || s.y < HZ + 6) {
+        rips.push({ x: s.x, y: s.y, t: 0, s: scale(s.y) * 1.5, a: .9 });
+        stones.splice(i, 1);
+      }
+    }
+  }
+  for (let i = rips.length - 1; i >= 0; i--) {
+    rips[i].t += dt;
+    if (rips[i].t > 1.4) rips.splice(i, 1);
+  }
+}
+
+function draw() {
+  let gr = g.createLinearGradient(0, 0, 0, HZ);
+  gr.addColorStop(0, '#f6b26b'); gr.addColorStop(1, '#fde7c4');
+  g.fillStyle = gr; g.fillRect(0, 0, W, HZ);
+  gr = g.createLinearGradient(0, HZ, 0, H);
+  gr.addColorStop(0, '#3f7f9c'); gr.addColorStop(1, '#0d3350');
+  g.fillStyle = gr; g.fillRect(0, HZ, W, H - HZ);
+  g.fillStyle = '#1d3b2f';
+  g.beginPath(); g.moveTo(0, HZ);
+  for (let x = 0; x <= W; x += W / 8) g.lineTo(x, HZ - 14 - 10 * Math.sin(x * .02));
+  g.lineTo(W, HZ); g.fill();
+
+  for (const r of rips) {
+    const k = r.t / 1.4, rad = (6 + k * 70) * r.s;
+    g.strokeStyle = `rgba(255,255,255,${r.a * (1 - k)})`;
+    g.lineWidth = 2 * r.s + .5;
+    g.beginPath(); g.ellipse(r.x, r.y, rad, rad * .3, 0, 0, 7); g.stroke();
+  }
+  for (const s of stones) {
+    const sc = scale(s.y);
+    g.fillStyle = `rgba(0,0,0,${Math.max(.08, .3 - s.h / 600)})`;
+    g.beginPath(); g.ellipse(s.x, s.y, 9 * sc, 3.5 * sc, 0, 0, 7); g.fill();
+    g.fillStyle = '#6b7075';
+    g.beginPath(); g.ellipse(s.x, s.y - s.h * sc, 10 * sc, 5 * sc, 0, 0, 7); g.fill();
+    g.fillStyle = '#9aa0a6';
+    g.beginPath(); g.ellipse(s.x - 2 * sc, s.y - s.h * sc - sc, 6 * sc, 2.5 * sc, 0, 0, 7); g.fill();
+  }
+}
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  step(dt); draw();
+  nEl.textContent = (server + pending).toLocaleString('ru-RU');
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+addEventListener('pointerdown', e => {
+  throwStone(e.clientX, e.clientY);
+  pending++;
+  if (navigator.vibrate) navigator.vibrate(8);
+});
+
+async function sync() {
+  const n = pending;
+  if (n > 0) {
+    pending -= n;
+    try {
+      const r = await fetch(DB, { method: 'PUT', body: JSON.stringify({ '.sv': { increment: n } }) });
+      if (!r.ok) throw r.status;
+    } catch (e) { pending += n; lEl.textContent = 'ошибка записи: ' + e + (e == 401 ? ' (правила базы запрещают запись)' : ''); return; }
+  }
+  try {
+    const r = await fetch(DB);
+    if (!r.ok) throw r.status;
+    const v = await r.json();
+    server = typeof v === 'number' ? v : 0;
+    lEl.textContent = 'камней брошено всеми';
+  } catch (e) { lEl.textContent = 'ошибка чтения: ' + e; }
+}
+sync();
+setInterval(sync, 5000);
+</script>
+</body>
+</html>
