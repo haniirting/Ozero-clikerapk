@@ -1,13 +1,8 @@
 
-name: Unpack Ozero Files
+name: Unpack Ozero Project
 
 on:
   workflow_dispatch:
-    inputs:
-      zip_path:
-        description: "Путь к ZIP-архиву"
-        required: true
-        default: "uploads/Ozero-FDroid-files.zip"
 
 permissions:
   contents: write
@@ -17,44 +12,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find ZIP
-        env:
-          ZIP_PATH: ${{ inputs.zip_path }}
+      - name: Check ZIP
         run: |
-          if [ ! -f "$ZIP_PATH" ]; then
-            echo "Архив не найден: $ZIP_PATH"
-            echo "Содержимое репозитория:"
-            find . -maxdepth 3 -type f
+          ZIP="Ozero-clikerapk-main.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "Архив не найден!"
+            ls -la
             exit 1
           fi
 
-      - name: Extract ZIP
-        env:
-          ZIP_PATH: ${{ inputs.zip_path }}
+      - name: Extract project
         run: |
-          mkdir extracted
-          unzip -o "$ZIP_PATH" -d extracted
+          mkdir -p extracted
+          unzip -o Ozero-clikerapk-main.zip -d extracted
 
-      - name: Copy files
+      - name: Copy project files
         run: |
-          find extracted -type f -name index.html \
-            -exec cp {} www/index.html \;
+          cp -a extracted/Ozero-clikerapk-main/. .
 
-          find extracted -type f -path '*/android/build.gradle' \
-            -exec cp {} android/build.gradle \;
-
-          find extracted -type f -path '*/android/app/build.gradle' \
-            -exec cp {} android/app/build.gradle \;
-
-      - name: Commit
+      - name: Commit extracted files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add www/index.html android/build.gradle android/app/build.gradle
-          git diff --cached --quiet || (
-            git commit -m "Apply F-Droid files"
+
+          git add -A
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Extract Ozero project archive"
             git push
-          )
+          else
+            echo "Изменений нет"
+          fi
