@@ -1,26 +1,26 @@
 
-name: Prepare Android project for F-Droid
+name: Build and Publish Ozero
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Set up Java
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -33,33 +33,54 @@ jobs:
         run: |
           mkdir -p www
           cp index.html www/index.html
-
           npx cap sync android
 
-      - name: Verify Android assets
-        run: |
-          test -f android/app/src/main/assets/public/index.html
-          echo "Web assets verified!"
-
-      - name: Build APK files
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug assembleRelease
 
-      - name: Generate checksums
+      - name: Prepare release files
+        id: apk
         run: |
-          cd android/app/build/outputs/apk
-          find debug release -name "*.apk" -exec sha256sum {} \; \
-            > "$GITHUB_WORKSPACE/SHA256SUMS.txt"
+          mkdir -p release-files
 
-      - name: Upload APK files
-        uses: actions/upload-artifact@v4
-        with:
-          name: Ozero-Android-APK
-          path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/release/*.apk
-            SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 30
+          find android/app/build/outputs/apk \
+            -type f -name "*.apk" \
+            -exec cp {} release-files/ \;
+
+          if ! ls release-files/*.apk >/dev/null 2>&1; then
+            echo "APK files not found!"
+            exit 1
+          fi
+
+          cd release-files
+          sha256sum *.apk > SHA256SUMS.txt
+
+          echo "tag=v1.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.apk.outputs.tag }}"
+
+          gh release create "$TAG" \
+            release-files/*.apk \
+            release-files/SHA256SUMS.txt \
+            --title "Озеро $TAG" \
+            --notes "Автоматическая сборка Android приложения Озеро.
+
+          Вложения:
+          - Debug APK для тестирования
+          - Release APK для дальнейшей проверки
+          - SHA256 контрольные суммы
+
+          Сборка: $GITHUB_SHA" \
+            --prerelease
+
+      - name: Show release URL
+        run: |
+          gh release view "${{ steps.apk.outputs.tag }}" \
+            --json url --jq .url
