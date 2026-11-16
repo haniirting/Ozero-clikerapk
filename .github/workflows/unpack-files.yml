@@ -1,0 +1,70 @@
+
+name: Unpack Ozero Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_path:
+        description: "Путь к ZIP-архиву в репозитории"
+        required: true
+        default: "Ozero-FDroid-files.zip"
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Check archive
+        shell: bash
+        run: |
+          ZIP="${{ inputs.zip_path }}"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "Архив не найден: $ZIP"
+            exit 1
+          fi
+
+          while IFS= read -r entry; do
+            if [[ "$entry" == /* || "$entry" == *".."* ]]; then
+              echo "Недопустимый путь в архиве: $entry"
+              exit 1
+            fi
+          done < <(unzip -Z1 "$ZIP")
+
+      - name: Extract archive
+        run: |
+          mkdir -p extracted
+          unzip -o "${{ inputs.zip_path }}" -d extracted
+
+      - name: Install files
+        run: |
+          mkdir -p www android/app
+
+          find extracted -type f -name "index.html" \
+            -exec cp {} www/index.html \;
+
+          find extracted -type f -path "*/android/build.gradle" \
+            -exec cp {} android/build.gradle \;
+
+          find extracted -type f -path "*/android/app/build.gradle" \
+            -exec cp {} android/app/build.gradle \;
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add www/index.html android/build.gradle android/app/build.gradle
+
+          if git diff --cached --quiet; then
+            echo "Нет изменений"
+          else
+            git commit -m "Apply F-Droid files"
+            git push
+          fi
