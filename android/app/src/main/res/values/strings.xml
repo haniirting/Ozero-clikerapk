@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Озеро</string>
+    <string name="title_activity_main">Озеро</string>
+    <string name="package_name">com.ozero.taptap</string>
+    <string name="custom_url_scheme">com.ozero.taptap</string>
+</resources>
