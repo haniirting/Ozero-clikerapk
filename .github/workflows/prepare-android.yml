@@ -1,28 +1,40 @@
-name: Prepare Android
+name: Build APK
 on:
+  push:
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
-  export:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: mkdir -p www && cp index.html www/
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: mkdir -p www && cp "$(find . -name index.html -not -path "./node_modules/*" -not -path "./www/*" | head -1)" www/index.html
       - run: npm install
       - run: echo '{"appId":"com.ozero.taptap","appName":"Озеро","webDir":"www"}' > capacitor.config.json
-      - run: npx cap add android
-      - name: Bluetooth permissions
+      - name: Android project and Bluetooth permissions
         run: |
-          sed -i 's#</manifest>#<uses-permission android:name="android.permission.BLUETOOTH" /><uses-permission android:name="android.permission.BLUETOOTH_ADMIN" /><uses-permission android:name="android.permission.BLUETOOTH_SCAN" /><uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" /></manifest>#' android/app/src/main/AndroidManifest.xml
+          [ -d android ] || npx cap add android
+          grep -q BLUETOOTH_SCAN android/app/src/main/AndroidManifest.xml || sed -i 's#</manifest>#<uses-permission android:name="android.permission.BLUETOOTH" /><uses-permission android:name="android.permission.BLUETOOTH_ADMIN" /><uses-permission android:name="android.permission.BLUETOOTH_SCAN" /><uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" /></manifest>#' android/app/src/main/AndroidManifest.xml
       - run: npx cap sync android
-      - name: Commit android folder
+      - name: Use permanent signing key
+        env:
+          P: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add -f android capacitor.config.json
-          git commit -m "Add Android project" || echo "nothing to commit"
-          git push
+          if [ -f signing/debug.keystore.gpg ] && [ -n "$P" ]; then
+            mkdir -p ~/.android
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$P" -d -o ~/.android/debug.keystore signing/debug.keystore.gpg
+          fi
+      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Озеро (APK)
+          files: android/app/build/outputs/apk/debug/app-debug.apk
